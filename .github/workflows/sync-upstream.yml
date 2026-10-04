@@ -23,23 +23,31 @@ jobs:
           git remote add upstream https://github.com/N3urda/hongguoTV.git
           git fetch upstream --prune
 
-      - name: fast-forward 同步上游分支到本仓库
+      - name: 同步上游分支到本仓库
         run: |
           set -eux
-          for br in $(git for-each-ref --format='%(refname:short) %(symref)' 'refs/remotes/upstream/*' | awk '$2=="" {print $1}'); do
-            local="${br#upstream/}"
-            echo "=== 同步分支: $local ==="
-            if git rev-parse --verify "refs/heads/$local" >/dev/null 2>&1; then
-              # 本地已有同名分支：仅当本地是上游祖先时做 fast-forward，否则跳过（保留本地修改）
-              if git merge-base --is-ancestor "refs/heads/$local" "refs/remotes/$br"; then
-                git push origin "refs/remotes/$br:refs/heads/$local"
-                echo "OK: $local 已更新到上游最新"
+          git fetch upstream --prune
+          default_br=$(git rev-parse --abbrev-ref HEAD)
+          for ref in $(git for-each-ref --format='%(refname)' refs/remotes/upstream); do
+            br="${ref#refs/remotes/upstream/}"
+            case "$br" in HEAD) continue ;; esac
+            echo "=== 同步分支: $br ==="
+            if git rev-parse -q --verify "refs/heads/$br" >/dev/null 2>&1; then
+              if [ "$br" = "$default_br" ]; then
+                # 默认分支：rebase 本地提交到上游最新之上，既保留本地修改又持续同步上游
+                git checkout -q "$br"
+                git rebase "refs/remotes/upstream/$br"
+                git push --force-with-lease origin "$br"
+                echo "OK: $br 已 rebase 到上游最新（保留本地提交）"
+              elif git merge-base --is-ancestor "refs/heads/$br" "refs/remotes/upstream/$br"; then
+                git push origin "refs/remotes/upstream/$br:refs/heads/$br"
+                echo "OK: $br 已 fast-forward 到上游"
               else
-                echo "SKIP: $local 与上游出现分叉，已跳过（保留本地修改，如需覆盖请手动处理）"
+                echo "SKIP: $br 与上游分叉，保留本地修改"
               fi
             else
-              git push origin "refs/remotes/$br:refs/heads/$local"
-              echo "OK: $local 已创建"
+              git push origin "refs/remotes/upstream/$br:refs/heads/$br"
+              echo "OK: $br 已创建"
             fi
           done
 
