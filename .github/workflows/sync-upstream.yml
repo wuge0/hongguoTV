@@ -32,31 +32,29 @@ jobs:
           for ref in $(git for-each-ref --format='%(refname)' refs/remotes/upstream); do
             br="${ref#refs/remotes/upstream/}"
             case "$br" in HEAD) continue ;; esac
-            if git rev-parse -q --verify "refs/heads/$br" >/dev/null 2>&1; then
-              # 本地已包含上游最新（上游是本地祖先）：无更新，跳过
-              if git merge-base --is-ancestor "refs/remotes/upstream/$br" "refs/heads/$br"; then
-                echo "无更新: $br（本地已包含上游最新）"
-                continue
-              fi
-              # 上游有本地没有的新提交
-              updated=1
-              echo "=== 有更新，同步分支: $br ==="
-              if [ "$br" = "$default_br" ]; then
-                # 默认分支：rebase 本地提交到上游最新之上，既保留本地修改又持续同步上游
-                git checkout -q "$br"
-                git rebase "refs/remotes/upstream/$br"
-                git push --force-with-lease origin "$br"
-                echo "OK: $br 已 rebase 到上游最新（保留本地提交）"
-              elif git merge-base --is-ancestor "refs/heads/$br" "refs/remotes/upstream/$br"; then
+            # 以目标仓库(origin)为准：若 origin 已包含该上游分支最新提交，则无更新，跳过
+            if git rev-parse -q --verify "refs/remotes/origin/$br" >/dev/null 2>&1 \
+               && git merge-base --is-ancestor "refs/remotes/upstream/$br" "refs/remotes/origin/$br"; then
+              echo "无更新: $br（仓库已包含上游最新）"
+              continue
+            fi
+            updated=1
+            echo "=== 有更新，同步分支: $br ==="
+            if [ "$br" = "$default_br" ]; then
+              # 默认分支：rebase 本地提交到上游最新之上，既保留本地修改又持续同步上游
+              git checkout -q "$br"
+              git rebase "refs/remotes/upstream/$br"
+              git push --force-with-lease origin "$br"
+              echo "OK: $br 已 rebase 到上游最新（保留本地提交）"
+            elif git rev-parse -q --verify "refs/remotes/origin/$br" >/dev/null 2>&1; then
+              # origin 已有该分支：能 fast-forward 则更新，分叉则跳过（保留本地修改）
+              if git merge-base --is-ancestor "refs/remotes/origin/$br" "refs/remotes/upstream/$br"; then
                 git push origin "refs/remotes/upstream/$br:refs/heads/$br"
                 echo "OK: $br 已 fast-forward 到上游"
               else
                 echo "SKIP: $br 与上游分叉，保留本地修改"
               fi
             else
-              # 上游新增了本地没有的分支
-              updated=1
-              echo "=== 上游新增分支，同步: $br ==="
               git push origin "refs/remotes/upstream/$br:refs/heads/$br"
               echo "OK: $br 已创建"
             fi
