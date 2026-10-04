@@ -23,16 +23,24 @@ jobs:
           git remote add upstream https://github.com/N3urda/hongguoTV.git
           git fetch upstream --prune
 
-      - name: 同步上游分支到本仓库
+      - name: 同步上游分支到本仓库（有更新才同步）
         run: |
           set -eux
           git fetch upstream --prune
           default_br=$(git rev-parse --abbrev-ref HEAD)
+          updated=0
           for ref in $(git for-each-ref --format='%(refname)' refs/remotes/upstream); do
             br="${ref#refs/remotes/upstream/}"
             case "$br" in HEAD) continue ;; esac
-            echo "=== 同步分支: $br ==="
             if git rev-parse -q --verify "refs/heads/$br" >/dev/null 2>&1; then
+              # 本地已包含上游最新（上游是本地祖先）：无更新，跳过
+              if git merge-base --is-ancestor "refs/remotes/upstream/$br" "refs/heads/$br"; then
+                echo "无更新: $br（本地已包含上游最新）"
+                continue
+              fi
+              # 上游有本地没有的新提交
+              updated=1
+              echo "=== 有更新，同步分支: $br ==="
               if [ "$br" = "$default_br" ]; then
                 # 默认分支：rebase 本地提交到上游最新之上，既保留本地修改又持续同步上游
                 git checkout -q "$br"
@@ -46,12 +54,18 @@ jobs:
                 echo "SKIP: $br 与上游分叉，保留本地修改"
               fi
             else
+              # 上游新增了本地没有的分支
+              updated=1
+              echo "=== 上游新增分支，同步: $br ==="
               git push origin "refs/remotes/upstream/$br:refs/heads/$br"
               echo "OK: $br 已创建"
             fi
           done
+          if [ "$updated" = 0 ]; then
+            echo "本次检查：上游无新更新，无需同步。"
+          fi
 
       - name: 汇报结果
         if: always()
         run: |
-          echo "本次同步完成。上游分支 main / codex/kotlin-standalone 已检查。"
+          echo "同步任务执行完毕：有更新时已同步，无更新时已跳过。"
