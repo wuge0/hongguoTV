@@ -26,7 +26,7 @@ jobs:
       - name: fast-forward 同步上游分支到本仓库
         run: |
           set -eux
-          for br in $(git for-each-ref --format='%(refname:short)' 'refs/remotes/upstream/*' | grep -v '/HEAD$'); do
+          for br in $(git for-each-ref --format='%(refname:short) %(symref)' 'refs/remotes/upstream/*' | awk '$2=="" {print $1}'); do
             local="${br#upstream/}"
             echo "=== 同步分支: $local ==="
             if git rev-parse --verify "refs/heads/$local" >/dev/null 2>&1; then
