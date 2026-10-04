@@ -1,0 +1,49 @@
+name: 每日同步上游
+
+on:
+  schedule:
+    # 每天 UTC 02:30 运行（对应北京时间 10:30）
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 添加并抓取上游
+        run: |
+          git remote add upstream https://github.com/N3urda/hongguoTV.git
+          git fetch upstream --prune
+
+      - name: fast-forward 同步上游分支到本仓库
+        run: |
+          set -eux
+          for br in $(git for-each-ref --format='%(refname:short)' refs/remotes/upstream); do
+            local="${br#upstream/}"
+            echo "=== 同步分支: $local ==="
+            if git rev-parse --verify "refs/heads/$local" >/dev/null 2>&1; then
+              # 本地已有同名分支：仅当本地是上游祖先时做 fast-forward，否则跳过（保留本地修改）
+              if git merge-base --is-ancestor "refs/heads/$local" "refs/remotes/$br"; then
+                git push origin "refs/remotes/$br:refs/heads/$local"
+                echo "OK: $local 已更新到上游最新"
+              else
+                echo "SKIP: $local 与上游出现分叉，已跳过（保留本地修改，如需覆盖请手动处理）"
+              fi
+            else
+              git push origin "refs/remotes/$br:refs/heads/$local"
+              echo "OK: $local 已创建"
+            fi
+          done
+
+      - name: 汇报结果
+        if: always()
+        run: |
+          echo "本次同步完成。上游分支 main / codex/kotlin-standalone 已检查。"
